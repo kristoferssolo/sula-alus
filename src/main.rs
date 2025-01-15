@@ -14,7 +14,7 @@ fn main() -> io::Result<()> {
             Ok(())
         }
         Err(e) => {
-            eprintln!("Error: {}", e);
+            eprintln!("Error: {e}");
             Err(e)
         }
     }
