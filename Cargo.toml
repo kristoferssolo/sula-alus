@@ -1,7 +1,17 @@
 [package]
 name = "sula-alus"
+authors = ["Kristofers Solo <dev@kristofers.xyz>"]
 version = "0.1.0"
 edition = "2021"
+description = "A CLI tool to encode strings and files using Sula-Alus encoding"
+repository = "https://github.com/kristoferssolo/sula-alus"
+documentation = "https://docs.rs/sula-alus"
+homepage = "https://github.com/kristoferssolo/sula-alus"
+license = "MIT OR Apache-2.0"
+keywords = ["cli", "string", "text", "utility"]
+categories = ["command-line-utilities"]
+exclude = ["/.github", "/.gitignore", "/tests", "*.png", "*.md"]
+readme = "README.md"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
