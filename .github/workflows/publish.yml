@@ -22,8 +22,8 @@ jobs:
       - uses: actions-rust-lang/audit@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-  crates_io_publish:
-    name: Publish (crates.io)
+  publish-crate:
+    name: Publish to crates.io
     needs:
       - audit
     runs-on: ubuntu-latest
@@ -41,22 +41,7 @@ jobs:
         if: steps.cargo_release_cache.outputs.cache-hit != 'true'
       - name: cargo login
         run: cargo login ${{ secrets.CRATES_IO_API_TOKEN }}
-      # Publishing is currently messy, because:
-      #
-      # * `peace_rt_model_core` exports `NativeError` or `WebError` depending on the target.
-      # * `peace_rt_model_web` fails to build when publishing the workspace for a native target.
-      # * `peace_rt_model_web` still needs its dependencies to be published before it can be
-      #    published.
-      # * `peace_rt_model_hack` needs `peace_rt_model_web` to be published before it can be
-      #    published.
-      #
-      # We *could* pass through `--no-verify` so `cargo` doesn't build the crate before publishing,
-      # which is reasonable, since this job only runs after the Linux, Windows, and WASM builds
-      # have passed.
       - name: "cargo release publish"
-        # allow-branch HEAD is because GitHub actions switches
-        # to the tag while building, which is a detached head
-
         run: |-
           cargo release \
             publish \
@@ -66,3 +51,86 @@ jobs:
             --no-confirm \
             --no-verify \
             --execute
+  github-releas:
+    name: Create GitHub Release
+    needs:
+      - audit
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Build binary
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Prepare assets
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            7z a ../../sula-alus-${{ matrix.target }}.zip sula-alus.exe
+          else
+            tar czf ../../sula-alus-${{ matrix.target }}.tar.gz sula-alus
+          fi
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: sula-alus-${{ matrix.target }}
+          path: target/sula-alus-${{ matrix.target }}.*
+  create-release:
+    needs:
+      - github-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate PKGBUILD
+        run: |
+          cat > PKGBUILD << 'EOF'
+          # Maintainer: Kristofers Solo <dev@kristofers.xyz>
+          pkgname=sula-alus-bin
+          pkgver=${GITHUB_REF#refs/tags/v}
+          pkgrel=1
+          pkgdesc="A CLI tool to reverse strings"
+          arch=('x86_64')
+          url="https://github.com/$GITHUB_REPOSITORY"
+          license=('MIT', 'Apache-2.0')
+          provides=('sula-alus')
+          conflicts=('sula-alus')
+          source=("$url/releases/download/v$pkgver/sula-alus-x86_64-unknown-linux-gnu.tar.gz")
+          sha256sums=('SKIP')
+
+          package() {
+              install -Dm755 sula-alus "$pkgdir/usr/bin/sula-alus"
+          }
+          EOF
+      - uses: actions/download-artifact@v3
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: sula-alus-*/sula-alus-*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  publish-aur:
+    needs: [create-release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish AUR package
+        uses: KSXGitHub/github-actions-deploy-aur@v2.7.0
+        with:
+          pkgname: sula-alus-bin
+          pkgbuild: ./PKGBUILD
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to version ${GITHUB_REF#refs/tags/v}"
