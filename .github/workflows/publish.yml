@@ -51,7 +51,7 @@ jobs:
             --no-confirm \
             --no-verify \
             --execute
-  github-releas:
+  github-release:
     name: Create GitHub Release
     needs:
       - audit
@@ -87,8 +87,7 @@ jobs:
           name: sula-alus-${{ matrix.target }}
           path: target/sula-alus-${{ matrix.target }}.*
   create-release:
-    needs:
-      - github-release
+    needs: [github-release]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
