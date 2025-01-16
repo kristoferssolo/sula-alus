@@ -24,8 +24,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
   publish-crate:
     name: Publish to crates.io
-    needs:
-      - audit
+    needs: [audit]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -53,8 +52,9 @@ jobs:
             --execute
   github-release:
     name: Create GitHub Release
-    needs:
-      - audit
+    needs: [audit]
+    permissions:
+      contents: write
     strategy:
       matrix:
         include:
@@ -82,12 +82,29 @@ jobs:
             tar czf ../../sula-alus-${{ matrix.target }}.tar.gz sula-alus
           fi
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: sula-alus-${{ matrix.target }}
           path: target/sula-alus-${{ matrix.target }}.*
+          compression-level: 0
   create-release:
     needs: [github-release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/sula-alus-*
+          generate_release_notes: true
+  publish-aur:
+    needs: [create-release]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -111,19 +128,6 @@ jobs:
               install -Dm755 sula-alus "$pkgdir/usr/bin/sula-alus"
           }
           EOF
-      - uses: actions/download-artifact@v3
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: sula-alus-*/sula-alus-*
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  publish-aur:
-    needs: [create-release]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
       - name: Publish AUR package
         uses: KSXGitHub/github-actions-deploy-aur@v2.7.0
         with:
